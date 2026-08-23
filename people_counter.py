@@ -76,29 +76,83 @@ class PeopleCounter:
     # Detection Implementations
     # ------------------------------------------------
 
-    def detect_people_motion(self, frame):
-        mask = self.bg_subtractor.apply(frame)
+    def merge_boxes(self, rects, max_dist=50):
+        if not rects:
+            return []
+        
+        # Convert to x1, y1, x2, y2
+        boxes = []
+        for x, y, w, h in rects:
+            boxes.append([x, y, x + w, y + h])
+            
+        merged = []
+        while len(boxes) > 0:
+            current = boxes.pop(0)
+            has_merged = False
+            for i, other in enumerate(merged):
+                # Calculate distance between current rect and other rect
+                x_dist = max(0, max(current[0], other[0]) - min(current[2], other[2]))
+                y_dist = max(0, max(current[1], other[1]) - min(current[3], other[3]))
+                
+                # If they are close or overlapping, merge them
+                if x_dist <= max_dist and y_dist <= max_dist:
+                    merged[i] = [
+                        min(current[0], other[0]),
+                        min(current[1], other[1]),
+                        max(current[2], other[2]),
+                        max(current[3], other[3])
+                    ]
+                    has_merged = True
+                    break
+            if not has_merged:
+                merged.append(current)
+                
+        # Convert back to x, y, w, h
+        return [(b[0], b[1], b[2] - b[0], b[3] - b[1]) for b in merged]
 
-        # Remove shadows
+    def detect_people_motion(self, frame):
+        # 1. Apply Gaussian Blur to reduce background and camera sensor noise
+        blurred = cv2.GaussianBlur(frame, (11, 11), 0)
+        
+        # 2. Get foreground mask with a slow, stable learning rate (0.005)
+        mask = self.bg_subtractor.apply(blurred, learningRate=0.005)
+
+        # 3. Apply threshold to isolate moving objects and exclude soft shadows
         _, mask = cv2.threshold(mask, 200, 255, cv2.THRESH_BINARY)
 
-        # Remove noise
+        # 4. Perform morphological closing and opening to close gaps and eliminate stray pixels
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        
+        # Dilate slightly to connect disjoint parts of the same person
+        mask = cv2.dilate(mask, kernel, iterations=1)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        detections = []
+        raw_rects = []
         for contour in contours:
             area = cv2.contourArea(contour)
-            # Ignore small objects
-            if area < 1500:
+            # Find candidate contours (allow smaller ones initially for merging)
+            if area < 800:
                 continue
 
             x, y, w, h = cv2.boundingRect(contour)
-            # Ignore very small detections
-            if w < 30 or h < 50:
+            raw_rects.append((x, y, w, h))
+
+        # 5. Merge disjoint bounding boxes that are close together (e.g. head and torso)
+        merged_rects = self.merge_boxes(raw_rects, max_dist=45)
+
+        detections = []
+        for x, y, w, h in merged_rects:
+            # 6. Apply aspect ratio and minimum size criteria to filter out non-pedestrian noise
+            # Minimum volume check (e.g. 3500 pixels area)
+            if w * h < 3500:
+                continue
+                
+            # Humans are vertical: verify height-to-width ratio
+            aspect_ratio = h / float(w)
+            if aspect_ratio < 0.7 or aspect_ratio > 4.5:
                 continue
 
             cx, cy = self.get_centroid(x, y, w, h)
