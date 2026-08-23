@@ -148,4 +148,4 @@ Example stats response:
 
 ## License
 
-This project is provided as a base implementation for hackathon or learning purposes.
+This project is provided as a base implementation for SIH PURPOSE, TEAM NAME - HAWKEYE.
