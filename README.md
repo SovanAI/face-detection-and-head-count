@@ -1,151 +1,165 @@
-# Gate People Counter
+# HAWKEYE GateWatch - Advanced Gate People Counter
 
-A simple real-time people counter built with Python, OpenCV, and FastAPI. It detects moving people from a webcam, tracks them across a virtual gate line, and counts how many people entered and exited the scene.
+A high-performance, real-time people counter and occupancy monitoring dashboard designed for basic indoor gate-style tracking. Built with **Python**, **OpenCV**, and **FastAPI**, this system provides advanced human detection, centroid tracking, and automated crossing/occupancy logic, accessible via an interactive web dashboard.
 
-## Overview
+---
 
-This project creates a web dashboard that shows:
+## 🌟 Key Features
 
-- Live camera stream
-- Entry counter
-- Exit counter
-- Current number of people inside
-- Estimated crossing direction
+- **Real-Time Video Stream**: Live web stream displaying camera feed with a custom HUD, bounding boxes, target IDs, and historical motion trails.
+- **Three Detection Modes**:
+  - **Motion Detection (`motion`)**: Uses a Gaussian blur and MOG2 background subtractor combined with morphological opening/closing/dilation for high-speed motion tracking.
+  - **HOG Detector (`hog`)**: Utilizes standard Histogram of Oriented Gradients (HOG) descriptor with a linear Support Vector Machine (SVM) classifier for human detection.
+  - **Hybrid Mode (`hybrid`)**: High-efficiency mode that runs motion detection first, extracts moving Regions of Interest (ROIs), and runs the HOG classifier only on those small regions, delivering both speed and accuracy.
+- **Centroid Tracking & Motion History**:
+  - Euclidean distance-based centroid tracking.
+  - Blinking state indicators, random track colors, and custom corner bounding boxes.
+  - Particle trails tracking up to 20 past coordinates for each active target.
+  - A customizable disappeared frame budget (up to 12 frames) to handle brief occlusions.
+- **Dynamic Virtual Gate Line**:
+  - Supports both **Vertical** (left/right) and **Horizontal** (top/bottom) orientations.
+  - Dynamic line position slider adjustable from 10% to 90% of frame dimensions.
+- **Auto-calibration & Counting**:
+  - Automatically establishes entry and exit directions based on the first recorded crossing.
+  - Tracks total entries, exits, and current occupancy inside the monitored area.
+- **High-Tech Slate-Blue UI Dashboard**: Fully-responsive web interface featuring dynamic glassmorphism cards, real-time statistics polling, system configurations, and reset actions.
 
-The counting logic is handled in `people_counter.py`, while the web UI and API routes are defined in `main.py`.
+---
 
-## Features
+## 📂 Project Structure
 
-- Real-time video stream from webcam
-- Background subtraction-based motion detection
-- Object tracking across a gate line
-- Entry/exit counting logic
-- Web dashboard with live stats
-- Reset endpoint for clearing counters
-- Camera index configuration via environment variable
+- **[main.py](file:///e:/face_detection_hackethon/main.py)**: Configures the FastAPI server, serves the interactive HTML/JavaScript dashboard, streams MJPEG frames, and handles configuration updates.
+- **[people_counter.py](file:///e:/face_detection_hackethon/people_counter.py)**: Houses the core [`PeopleCounter`](file:///e:/face_detection_hackethon/people_counter.py#L7) class where the OpenCV frame capturing, human detection, centroid tracking, HUD rendering, and gate crossing logic are executed.
+- **[requirements.txt](file:///e:/face_detection_hackethon/requirements.txt)**: Specifies the Python environment dependencies.
 
-## Project Structure
+---
 
-```text
-face_detection_hackethon/
-├── main.py              # FastAPI app and web interface
-├── people_counter.py     # Computer vision and counting logic
-├── requirements.txt     # Python dependencies
-├── README.md            # Project documentation
-└── .venv/               # Optional local virtual environment
-```
+## 🛠️ Technical Details
 
-## Requirements
+### 1. Detection Pipelines
+The system uses the [`PeopleCounter.detect_people`](file:///e:/face_detection_hackethon/people_counter.py#L252) method to run the selected detection engine:
+- **Motion Core**: Applies `cv2.GaussianBlur` followed by `cv2.createBackgroundSubtractorMOG2`. Thresholds to binary mask, performs morphology closing and opening to reduce noise, dilates to connect segmented body parts, and merges bounding boxes within 45px distance.
+- **HOG SVM Core**: Resizes frame internally to 640px width (maintaining aspect ratio) for speed, runs SVM multi-scale pedestrian detection, and applies Non-Maximum Suppression (`cv2.dnn.NMSBoxes`) to eliminate duplicate overlap.
+- **Hybrid Core**: Restricts HOG SVM detection exclusively to ROIs identified by the motion processor, speeding up classification substantially.
 
+### 2. Centroid Tracking
+- Centroid matching is handled in [`PeopleCounter.update_tracking`](file:///e:/face_detection_hackethon/people_counter.py#L265) via Euclidean distance calculations between existing track centroids and incoming frame detections.
+- Unmatched targets are assigned a new ID, color, and tracking history.
+- If a target is undetected for 12 consecutive frames, its track is deleted.
+
+### 3. Crossing Logic
+- [`PeopleCounter.check_crossings`](file:///e:/face_detection_hackethon/people_counter.py#L349) tracks lines crossings. When a centroid transitions across the dynamic gate line:
+  - If it is the first crossing event, the system locks this direction as the standard entry vector (and the opposite as the exit vector).
+  - Subsequent crossings increment the respective entry or exit counters.
+
+---
+
+## 🚀 Installation & Setup
+
+### Requirements
 - Python 3.10+
-- Webcam or camera device
-- OpenCV and FastAPI dependencies listed in `requirements.txt`
+- A connected USB webcam or integrated camera device
+- OpenCV and FastAPI dependencies (defined in [requirements.txt](file:///e:/face_detection_hackethon/requirements.txt))
 
-## Installation
+### Step-by-Step Installation
 
-1. Clone the repository:
+1. **Clone/Navigate to the directory**:
+   ```bash
+   cd face_detection_hackethon
+   ```
 
-```bash
-git clone <your-repo-url>
-cd face_detection_hackethon
-```
+2. **Create and Activate a Virtual Environment**:
+   - **Windows**:
+     ```bash
+     python -m venv .venv
+     .venv\Scripts\activate
+     ```
+   - **macOS/Linux**:
+     ```bash
+     python -m venv .venv
+     source .venv/bin/activate
+     ```
 
-2. Create and activate a virtual environment:
+3. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-On Windows:
+---
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-```
+## 🏃 Run the Application
 
-On macOS/Linux:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-3. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-## Run the App
-
-Start the server:
-
+Start the FastAPI application by running:
 ```bash
 python main.py
 ```
-
-Or use Uvicorn directly:
-
+Or run directly via Uvicorn:
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Then open:
-
+Once running, navigate to:
 ```text
 http://localhost:8000/
 ```
 
-## Configuration
+### ⚙️ Camera Index Configuration
+By default, the application captures from camera index `0`. You can override this using the `CAMERA_INDEX` environment variable.
 
-The app can use a different camera source by setting the `CAMERA_INDEX` environment variable.
+- **Windows Command Prompt**:
+  ```cmd
+  set CAMERA_INDEX=1
+  python main.py
+  ```
+- **Windows PowerShell**:
+  ```powershell
+  $env:CAMERA_INDEX="1"
+  python main.py
+  ```
+- **macOS/Linux Shell**:
+  ```bash
+  export CAMERA_INDEX=1
+  python main.py
+  ```
 
-Example:
+---
 
-```bash
-set CAMERA_INDEX=1
-python main.py
-```
+## 📡 API Endpoints
 
-or on Linux/macOS:
+| Endpoint | Method | Payload (JSON) | Description |
+| --- | --- | --- | --- |
+| `/` | GET | *None* | Serves the web dashboard UI template. |
+| `/video` | GET | *None* | MJPEG multipart live video stream feed. |
+| `/stats` | GET | *None* | Returns JSON with current counts, directions, occupancy, and active settings. |
+| `/config` | POST | `ConfigUpdate` model | Updates the detection mode, gate orientation, and line position on-the-fly. |
+| `/reset` | POST | *None* | Resets all counts, directions, history, and tracks. |
 
-```bash
-export CAMERA_INDEX=1
-python main.py
-```
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-| --- | --- | --- |
-| `/` | GET | Web dashboard UI |
-| `/video` | GET | Live video stream |
-| `/stats` | GET | JSON with entry/exit counts and inside total |
-| `/reset` | POST | Reset the counting state |
-
-Example stats response:
-
+### Config Update JSON Payload Example
 ```json
 {
-  "entry_count": 12,
-  "exit_count": 7,
-  "entry_direction": "left_to_right",
-  "exit_direction": "right_to_left",
-  "current_inside": 5
+  "detection_mode": "hybrid",
+  "line_orientation": "vertical",
+  "line_position": 0.5
 }
 ```
 
-## How It Works
+### Stats JSON Response Example
+```json
+{
+  "entry_count": 5,
+  "exit_count": 2,
+  "entry_direction": "left_to_right",
+  "exit_direction": "right_to_left",
+  "current_inside": 3,
+  "detection_mode": "hybrid",
+  "line_orientation": "vertical",
+  "line_position": 0.5
+}
+```
 
-1. The webcam captures frames continuously.
-2. Background subtraction detects moving objects.
-3. The system tracks each detected object by centroid.
-4. A virtual gate line is drawn across the frame.
-5. When an object crosses the line, the app determines the direction.
-6. The counter increments entry or exit based on the established movement pattern.
+---
 
-## Notes
+## 🛡️ License & Team Info
 
-- The tracking logic is designed for basic indoor gate-style monitoring.
-- Lighting conditions, camera angle, and object size can affect detection accuracy.
-- For better results, use a stable camera position with a clear entrance/exit path.
-
-## License
-
-This project is provided as a base implementation for SIH PURPOSE, TEAM NAME - HAWKEYE.
+This application is provided as a base implementation for Smart India Hackathon (SIH) purposes.  
+**Team Name**: HAWKEYE
